@@ -1,0 +1,126 @@
+#!/usr/bin/python
+
+import os.path, sys
+from os.path import expanduser
+from tabulate import tabulate
+from functools import partial
+
+BALANCE_FILE = expanduser('~') + '/.register.data'
+
+# array indices
+NAME = 0
+CHANGE = 1
+BALANCE = 2
+
+# ANSI escape codes for text attributes
+class text:
+  GREEN = '\033[92m'
+  YELLOW = '\033[93m'
+  RED = '\033[91m'
+  BOLD = '\033[1m'
+  END = '\033[0m'
+
+def bold(s):
+  return text.BOLD + s + text.END
+  
+def positive(s):
+  return text.GREEN + s + text.END
+
+def negative(s):
+  return text.RED + s + text.END
+  
+def zero(s):
+  return text.YELLOW + s + text.END
+
+def format_row(row):
+  return map(color_column, row)
+
+def stringify_row(row):
+  return map(format_float, row)
+
+def write_row(f, row):
+    f.write('|'.join(stringify_row(row)) + '\n')
+
+def color_column(col):
+  try:
+    num = float(col)
+    if num == 0:
+      return zero(format_float(num))
+    elif num < 0:
+      return negative(format_float(num))
+    else:
+      return positive(format_float(num))
+  except ValueError:
+    return col
+
+def format_float(value):
+  try:
+    return "{:.2f}".format(value)
+  except ValueError:
+    return value
+
+def tail(f, lines):
+  """
+  Shamelessly stolen from http://stackoverflow.com/a/136368/5243467
+  Get up to the last N lines from a file f.
+  """
+  total_lines_wanted = lines
+  
+  BLOCK_SIZE = 1024
+  f.seek(0, 2)
+  block_end_byte = f.tell()
+  lines_to_go = total_lines_wanted
+  block_number = -1
+  blocks = [] # blocks of size BLOCK_SIZE, in reverse order starting
+              # from the end of the file
+  while lines_to_go > 0 and block_end_byte > 0:
+    if (block_end_byte - BLOCK_SIZE > 0):
+      # read the last block we haven't yet read
+      f.seek(block_number*BLOCK_SIZE, 2)
+      blocks.append(f.read(BLOCK_SIZE))
+    else:
+      # file too small, start from begining
+      f.seek(0,0)
+      # only read what was not read
+      blocks.append(f.read(block_end_byte))
+    lines_found = blocks[-1].count('\n')
+    lines_to_go -= lines_found
+    block_end_byte -= BLOCK_SIZE
+    block_number -= 1
+  all_read_text = ''.join(reversed(blocks))
+  return map(lambda s: s.split('|'), (all_read_text.splitlines()[-total_lines_wanted:]))
+
+def usage():
+  print "  Usage: " + sys.argv[0] + " <entry name> <entry value>"
+  print "         " + sys.argv[0] + " Payday 1000.00"
+  print "         " + sys.argv[0] + " \"Oil Change\" -40.00"
+  sys.exit(0)
+
+def main():
+  if not len(sys.argv) == 3:
+    usage()
+
+  program = sys.argv[0]
+  entry_name = sys.argv[1]
+  entry_value = float(sys.argv[2])
+
+  header = ["Name", "Change", "Balance"]
+  table = []
+
+  if not os.path.isfile(BALANCE_FILE):
+    row = [entry_name, entry_value, entry_value]
+    with open(BALANCE_FILE, 'w') as f:
+      write_row(f, row)
+  else:
+    with open(BALANCE_FILE, "a+") as f:
+      for line in tail(f, 4):
+        table.append(line)
+      current_balance = float(table[-1][-1]) + entry_value
+      row = [entry_name, entry_value, current_balance]
+      write_row(f, row)
+
+  table.append(row)
+  print tabulate(map(format_row, table), header, tablefmt="grid", floatfmt=".2f")
+
+if __name__ == '__main__':
+   main()
